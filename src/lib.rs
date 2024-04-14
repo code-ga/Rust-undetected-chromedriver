@@ -78,7 +78,17 @@ pub async fn chrome() -> Result<WebDriver, Box<dyn std::error::Error>> {
     let base_dir = match os {
         "linux" => String::from("~/.undetected-chromedriver"),
         "macos" => String::from("~/.undetected-chromedriver"),
-        "windows" => String::from("~\\AppData\\Roaming\\undetected-chromedriver"),
+        "windows" => String::from(format!(
+            "{}\\AppData\\Roaming\\undetected-chromedriver",
+            match home::home_dir() {
+                Some(path) => path.display().to_string(),
+                None =>
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "Unable to get home directory"
+                    ))),
+            }
+        )),
         _ => panic!("Unsupported OS!"),
     };
     if std::path::Path::new(&base_dir).exists()
@@ -203,12 +213,16 @@ pub async fn chrome() -> Result<WebDriver, Box<dyn std::error::Error>> {
     Ok(driver)
 }
 
-async fn fetch_chromedriver(client: &reqwest::Client,base_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn fetch_chromedriver(
+    client: &reqwest::Client,
+    base_dir: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let os = std::env::consts::OS;
 
     let installed_version = get_chrome_version(os).await?;
     let chromedriver_url: String;
     if installed_version.as_str() >= "114" {
+        println!("Chrome version >= 114 detected!");
         // Fetch the correct version
         let url = "https://googlechromelabs.github.io/chrome-for-testing/latest-versions-per-milestone.json";
         let resp = client.get(url).send().await?;
@@ -221,15 +235,15 @@ async fn fetch_chromedriver(client: &reqwest::Client,base_dir: &str) -> Result<(
         // Fetch the chromedriver binary
         chromedriver_url = match os {
             "linux" => format!(
-                "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/{}/{}/{}",
+                "https://storage.googleapis.com/chrome-for-testing-public/{}/{}/{}",
                 version, "linux64", "chromedriver-linux64.zip"
             ),
             "macos" => format!(
-                "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/{}/{}/{}",
+                "https://storage.googleapis.com/chrome-for-testing-public/{}/{}/{}",
                 version, "mac-x64", "chromedriver-mac-x64.zip"
             ),
             "windows" => format!(
-                "https://edgedl.me.gvt1.com/edgedl/chrome/chrome-for-testing/{}/{}/{}",
+                "https://storage.googleapis.com/chrome-for-testing-public/{}/{}/{}",
                 version, "win64", "chromedriver-win64.zip"
             ),
             _ => panic!("Unsupported OS!"),
@@ -262,11 +276,20 @@ async fn fetch_chromedriver(client: &reqwest::Client,base_dir: &str) -> Result<(
 
     let resp = client.get(&chromedriver_url).send().await?;
     let body = resp.bytes().await?;
+    println!("Downloading chromedriver...");
+    dbg!(&base_dir);
+    let base_dir = std::path::Path::new(base_dir);
+    if !base_dir.exists() {
+        std::fs::create_dir(base_dir)?;
+    }
+    println!("{}", body.len());
 
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(body))?;
+    println!("Extracting chromedriver...");
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
         let outpath = std::path::Path::new(&base_dir).join(file.mangled_name());
+        println!("extracting {} to {:?}", file.name(), outpath);
         if file.name().ends_with('/') {
             std::fs::create_dir_all(&outpath)?;
         } else {
