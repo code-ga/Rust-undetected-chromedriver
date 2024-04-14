@@ -6,7 +6,70 @@ use std::process::Command;
 use std::time::Duration;
 // use thirtyfour::{prelude::ElementWaitable, By};
 pub use thirtyfour::prelude::*;
+pub use thirtyfour::error::WebDriverError;
 // use thirtyfour::{DesiredCapabilities, WebDriver};
+
+#[async_trait::async_trait]
+pub trait Chrome {
+    async fn new() -> Self;
+    async fn bypass_cloudflare(&self, url: &str) -> Result<(), Box<dyn Error>>;
+    async fn borrow(&self) -> &WebDriver;
+    async fn goto(&self, url: &str) -> Result<(), Box<dyn Error>>;
+}
+
+#[async_trait::async_trait]
+impl Chrome for WebDriver {
+    async fn new() -> WebDriver {
+        chrome().await.unwrap()
+    }
+
+    async fn goto(&self, url: &str) -> Result<(), Box<dyn Error>> {
+        let driver = self.borrow().await;
+        driver
+            .execute(&format!(r#"window.open("{}", "_blank");"#, url), vec![])
+            .await?;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        let first_window = driver
+            .windows()
+            .await?
+            .first()
+            .expect("Unable to get first windows")
+            .clone();
+
+        driver.switch_to_window(first_window).await?;
+        driver.close_window().await?;
+        let first_window = driver
+            .windows()
+            .await?
+            .last()
+            .expect("Unable to get last windows")
+            .clone();
+        driver.switch_to_window(first_window).await?;
+        Ok(())
+    }
+
+    async fn bypass_cloudflare(&self, url: &str) -> Result<(), Box<dyn Error>> {
+        let driver = self.borrow().await;
+        driver.goto(url).await?;
+
+        driver.enter_frame(0).await?;
+
+        let button = driver.find(By::Css("#challenge-stage")).await?;
+
+        button.wait_until().clickable().await?;
+
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        button.click().await?;
+        Ok(())
+    }
+
+    async fn borrow(&self) -> &WebDriver {
+        self
+    }
+}
 
 /// Fetches a new ChromeDriver executable and patches it to prevent detection.
 /// Returns a WebDriver instance.
@@ -228,67 +291,5 @@ async fn get_chrome_version(os: &str) -> Result<String, Box<dyn std::error::Erro
 
     println!("Currently installed Chrome version: {}", version);
     Ok(version)
-}
-
-#[async_trait::async_trait]
-pub trait Chrome {
-    async fn new() -> Self;
-    async fn bypass_cloudflare(&self, url: &str) -> Result<(), Box<dyn Error>>;
-    async fn borrow(&self) -> &WebDriver;
-    async fn goto(&self, url: &str) -> Result<(), Box<dyn Error>>;
-}
-
-#[async_trait::async_trait]
-impl Chrome for WebDriver {
-    async fn new() -> WebDriver {
-        chrome().await.unwrap()
-    }
-
-    async fn goto(&self, url: &str) -> Result<(), Box<dyn Error>> {
-        let driver = self.borrow().await;
-        driver
-            .execute(&format!(r#"window.open("{}", "_blank");"#, url), vec![])
-            .await?;
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
-
-        let first_window = driver
-            .windows()
-            .await?
-            .first()
-            .expect("Unable to get first windows")
-            .clone();
-
-        driver.switch_to_window(first_window).await?;
-        driver.close_window().await?;
-        let first_window = driver
-            .windows()
-            .await?
-            .last()
-            .expect("Unable to get last windows")
-            .clone();
-        driver.switch_to_window(first_window).await?;
-        Ok(())
-    }
-
-    async fn bypass_cloudflare(&self, url: &str) -> Result<(), Box<dyn Error>> {
-        let driver = self.borrow().await;
-        driver.goto(url).await?;
-
-        driver.enter_frame(0).await?;
-
-        let button = driver.find(By::Css("#challenge-stage")).await?;
-
-        button.wait_until().clickable().await?;
-
-        tokio::time::sleep(Duration::from_secs(2)).await;
-
-        button.click().await?;
-        Ok(())
-    }
-
-    async fn borrow(&self) -> &WebDriver {
-        self
-    }
 }
 
