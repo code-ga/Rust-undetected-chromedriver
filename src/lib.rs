@@ -5,8 +5,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 use std::time::Duration;
 // use thirtyfour::{prelude::ElementWaitable, By};
-pub use thirtyfour::prelude::*;
 pub use thirtyfour::error::WebDriverError;
+pub use thirtyfour::prelude::*;
 // use thirtyfour::{DesiredCapabilities, WebDriver};
 
 #[async_trait::async_trait]
@@ -75,14 +75,26 @@ impl Chrome for WebDriver {
 /// Returns a WebDriver instance.
 pub async fn chrome() -> Result<WebDriver, Box<dyn std::error::Error>> {
     let os = std::env::consts::OS;
-    if std::path::Path::new("chromedriver").exists()
-        || std::path::Path::new("chromedriver.exe").exists()
+    let base_dir = match os {
+        "linux" => String::from("~/.undetected-chromedriver"),
+        "macos" => String::from("~/.undetected-chromedriver"),
+        "windows" => String::from("~\\AppData\\Roaming\\undetected-chromedriver"),
+        _ => panic!("Unsupported OS!"),
+    };
+    if std::path::Path::new(&base_dir).exists()
+        || std::path::Path::new(&base_dir)
+            .join(match os {
+                "linux" | "macos" => "chromedriver",
+                "windows" => "chromedriver.exe",
+                _ => panic!("Unsupported OS!"),
+            })
+            .exists()
     {
         println!("ChromeDriver already exists!");
     } else {
         println!("ChromeDriver does not exist! Fetching...");
         let client = reqwest::Client::new();
-        fetch_chromedriver(&client).await.unwrap();
+        fetch_chromedriver(&client, &base_dir).await.unwrap();
     }
     let chromedriver_executable = match os {
         "linux" => "chromedriver_PATCHED",
@@ -191,7 +203,7 @@ pub async fn chrome() -> Result<WebDriver, Box<dyn std::error::Error>> {
     Ok(driver)
 }
 
-async fn fetch_chromedriver(client: &reqwest::Client) -> Result<(), Box<dyn std::error::Error>> {
+async fn fetch_chromedriver(client: &reqwest::Client,base_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     let os = std::env::consts::OS;
 
     let installed_version = get_chrome_version(os).await?;
@@ -254,7 +266,7 @@ async fn fetch_chromedriver(client: &reqwest::Client) -> Result<(), Box<dyn std:
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(body))?;
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
-        let outpath = file.mangled_name();
+        let outpath = std::path::Path::new(&base_dir).join(file.mangled_name());
         if file.name().ends_with('/') {
             std::fs::create_dir_all(&outpath)?;
         } else {
@@ -292,4 +304,3 @@ async fn get_chrome_version(os: &str) -> Result<String, Box<dyn std::error::Erro
     println!("Currently installed Chrome version: {}", version);
     Ok(version)
 }
-
