@@ -294,7 +294,7 @@ async fn fetch_chromedriver(
     dbg!(&base_dir);
     let base_dir = std::path::Path::new(base_dir);
     if !base_dir.exists() {
-        std::fs::create_dir(base_dir)?;
+        std::fs::create_dir_all(base_dir)?;
     }
     println!("{}", body.len());
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(body))?;
