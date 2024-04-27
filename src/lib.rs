@@ -76,8 +76,28 @@ impl Chrome for WebDriver {
 pub async fn chrome() -> Result<WebDriver, Box<dyn std::error::Error + Send + Sync>> {
     let os = std::env::consts::OS;
     let base_dir = match os {
-        "linux" => String::from("~/.undetected-chromedriver"),
-        "macos" => String::from("~/.undetected-chromedriver"),
+        "linux" => String::from(format!(
+            "{}/.undetected-chromedriver",
+            match home::home_dir() {
+                Some(path) => path.display().to_string(),
+                None =>
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "Unable to get home directory"
+                    ))),
+            }
+        )),
+        "macos" => String::from(format!(
+            "{}/.undetected-chromedriver",
+            match home::home_dir() {
+                Some(path) => path.display().to_string(),
+                None =>
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        "Unable to get home directory"
+                    ))),
+            }
+        )),
         "windows" => String::from(format!(
             "{}\\AppData\\Roaming\\undetected-chromedriver",
             match home::home_dir() {
